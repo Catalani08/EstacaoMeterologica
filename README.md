@@ -34,7 +34,7 @@ Esta solução abrange as áreas de Hardware, Firmware e Cloud Computing.
 
 ## 💡 Funcionalidades e Objetivos
 
-* ✅ **Monitoramento Completo:** Aquisição simultânea de 7 variáveis ambientais (T, U, P, Altitude, Luz, Vento (Velocidade e Direção) e Chuva).
+* ✅ **Monitoramento Completo:** Aquisição simultânea de 7 variáveis ambientais (T, U, P, Luz, Vento (Velocidade e Direção) e Chuva).
 * ✅ **Comunicação Segura:** Publicação de *payloads* (JSON) no Broker MQTT da AWS (IoT Core) usando certificados e TLS.
 * ✅ **Persistência de Dados:** Configuração de regras na AWS IoT Core para encaminhar os dados para um *Bucket* e *Measurement* específico no InfluxDB.
 * ✅ **Dashboard de Análise:** Criação de visualizações em tempo real  para gráficos e alertas.
