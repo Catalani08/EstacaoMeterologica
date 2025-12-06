@@ -8,8 +8,8 @@
 #include "wifi_connect.h"
 
 // --- ALTERE ESTAS CONFIGURAÇÕES ---
-#define EXAMPLE_ESP_WIFI_SSID    "CLARO_2G7FEFDF" //"SALA-12_(5G)"
-#define EXAMPLE_ESP_WIFI_PASS    "5D7FEFDF" //"fatec@1234+"
+#define EXAMPLE_ESP_WIFI_SSID    "nome da rede"
+#define EXAMPLE_ESP_WIFI_PASS    "senha"
 // ------------------------------------
 
 static const char *TAG = "WIFI_CONNECT";
@@ -72,10 +72,26 @@ void wifi_init_sta(void)
         .sta = {
             .ssid = EXAMPLE_ESP_WIFI_SSID,
             .password = EXAMPLE_ESP_WIFI_PASS,
-        },
+            //.threshold.authmode = WIFI_AUTH_WPA2_PSK, // Exige WPA2
+            //.pmf_cfg = {.capable = true, .required = false,}
+            //.scan_method = WIFI_ALL_CHANNEL_SCAN,
+            //.sort_method = WIFI_CONNECT_AP_BY_SIGNAL,
+        }
     };
+
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
+
+    wifi_country_t country_config = {
+        .cc = "BR",             // Código do país: Brasil
+        .schan = 1,             // Canal inicial
+        .nchan = 13,            // Total de canais (Habilita 12 e 13)
+        .policy = WIFI_COUNTRY_POLICY_AUTO,
+    };
+    ESP_ERROR_CHECK(esp_wifi_set_country(&country_config));
+    // Força o uso de b/g/n (evita tentativas de modos incompatíveis)
+    ESP_ERROR_CHECK(esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N));
+
     ESP_ERROR_CHECK(esp_wifi_start() );
 
     ESP_LOGI(TAG, "wifi_init_sta finalizado.");
@@ -85,7 +101,7 @@ void wifi_init_sta(void)
                                            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
                                            pdFALSE,
                                            pdFALSE,
-                                           portMAX_DELAY);
+                                           pdMS_TO_TICKS(15000));
 
     if (bits & WIFI_CONNECTED_BIT) {
         ESP_LOGI(TAG, "Conectado ao Wi-Fi: %s", EXAMPLE_ESP_WIFI_SSID);
