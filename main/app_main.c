@@ -28,13 +28,278 @@
 #define TEMPO_DE_SONO_SEGUNDOS 180 // Configuração de tempo para Deep Sleep
 #define TEMPO_EM_MICROSSEGUNDOS (TEMPO_DE_SONO_SEGUNDOS * 1000000ULL) // Converte para microssegundos
 
-// ============================================================ código MQTT =============================================================================
+// ============================================================ protótipos MQTT =============================================================================
 
 static const char *TAG = "MQTT";
 static esp_mqtt_client_handle_t client = NULL;
 static EventGroupHandle_t mqtt_event_group;
 const int MQTT_CONNECTED_BIT = BIT0;
 
+/*
+ * @brief Event handler registrado para receber eventos MQTT
+ */
+static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data);
+
+/**
+ * @brief Publica uma mensagem MQTT se o cliente estiver conectado.
+ * * @param topic O tópico para onde a mensagem será enviada.
+ * @param payload O conteúdo (string) da mensagem.
+ */
+static void publish_message(const char *topic, const char *payload);
+
+
+static void mqtt_app_start(void);
+
+//============================================================= protótipos bme280 ====================================================================
+
+static const char *TAG_BME280 = "TAG_BME280";
+#define BME280_SDA_PIN GPIO_NUM_21
+#define BME280_SCL_PIN GPIO_NUM_22
+#define I2C_MASTER_PORT     I2C_NUM_0
+#define I2C_MASTER_FREQ_HZ  400000 // 400kHz
+#define I2C_TIMEOUT_MS 100
+// Handle para o dispositivo BME280 no barramento I2C
+static i2c_master_dev_handle_t bme280_dev_handle = NULL;
+// Estrutura da biblioteca BME280 para guardar estado e calibração
+static struct bme280_t bme280_dev;
+// Flag para indicar se a inicialização foi bem-sucedida
+static bool bme280_initialized = false;
+
+// =================================================================================
+// Funções de Interface I2C e Delay (Ponte para a biblioteca bme280.c)
+// =================================================================================
+
+void user_delay_ms(BME280_MDELAY_DATA_TYPE period);
+
+BME280_RETURN_FUNCTION_TYPE user_i2c_write(uint8_t dev_addr, uint8_t reg_addr, uint8_t *reg_data, uint8_t len);
+
+BME280_RETURN_FUNCTION_TYPE user_i2c_read(uint8_t dev_addr, uint8_t reg_addr, uint8_t *reg_data, uint8_t len);
+
+/**
+ * @brief Inicializa o barramento I2C e o sensor BME280.
+ *
+ * @return true se a inicialização foi bem-sucedida, false caso contrário.
+ */
+bool init_bme280(void);
+
+/**
+ * @brief Lê o sensor BME280 uma vez, calcula os valores e imprime no console.
+ * Assume que init_bme280() já foi chamada com sucesso.
+ */
+void printBME280(double *temp_ptr, double *press_ptr, double *hum_ptr);
+
+// ======================================================== sensor de chuva =====================================================================
+
+// --- Configuração da TAG e do Pino ---
+static const char *TAG_CHUVA = "TAG_CHUVA";
+#define RAIN_SENSOR_GPIO_PIN    34
+#define ADC_UNIT    ADC_UNIT_1     // ADC1 é usado para GPIO34
+#define RAIN_SENSOR_ADC_CHANNEL ADC_CHANNEL_6  // GPIO34 corresponde ao ADC1_CHANNEL_6
+#define RAIN_SENSOR_ADC_ATTEN   ADC_ATTEN_DB_11 // Atenuação para ler a faixa completa 0-~3.3V
+
+// Handle global para a unidade ADC (necessário para a função printChuva)
+adc_oneshot_unit_handle_t adc1_handle = NULL; // Inicializa como NULL
+
+/**
+ * @brief Inicializa o canal para o sensor de chuva.
+ * Deve ser chamada uma vez antes de usar printChuva.
+ * Simplificada para usar ESP_ERROR_CHECK para lidar com erros.
+ */
+void init_rain_sensor_adc(void);
+
+/**
+ * @brief Lê o sensor de chuva uma vez, calcula os valores e imprime no console.
+ *
+ * @param adc_handle Handle da unidade ADC já inicializada.
+ */
+float printChuva(adc_oneshot_unit_handle_t adc_handle);
+
+// ======================================================== encoder ==============================================================================
+
+static const char *TAG_ENCODER = "TAG_ENCODER";
+
+// --- AJUSTES PARA O ENCODER E ANEMÔMETRO ---
+// Definições do Hardware Encoder E38S6G5-200B-G24N
+#define ENCODER_PPR_FISICO      200     // Pulsos Físicos por Rotação
+#define ENCODER_RESOLUCAO_4X    (ENCODER_PPR_FISICO * 4) // Resolução efetiva com 4x decoding = 800
+
+#define ENCODER_GPIO_A          25
+#define ENCODER_GPIO_B          26
+
+// Definições Físicas do Anemômetro
+#define RAIO_ANEMOMETRO_M       0.16f   // 16 cm
+#define FATOR_ANEMOMETRO        2.5f    // Fator de calibração
+#define PI                      3.14159f
+
+// Intervalo de amostragem para cálculo de velocidade em milissegundos
+#define SAMPLE_INTERVAL_MS      1000
+
+// --- Variáveis Globais ---
+// Handle para a unidade PCNT (precisa ser acessível pela função de leitura)
+static pcnt_unit_handle_t pcnt_unit = NULL;
+// Flag para indicar se a inicialização foi bem-sucedida
+static bool pcnt_initialized = false;
+// Variável para guardar a posição anterior entre chamadas da função de leitura
+static int pos_anterior_global = 0;
+
+
+// =================================================================================
+// Função de Inicialização (Chamada uma vez)
+// =================================================================================
+
+/**
+ * @brief Inicializa o hardware PCNT para leitura do encoder.
+ *
+ * @return true se a inicialização foi bem-sucedida, false caso contrário.
+ */
+bool init_encoder_pcnt(void);
+
+// =================================================================================
+// Função de Leitura e Impressão
+// =================================================================================
+/**
+ * @brief Realiza uma medição de velocidade do anemómetro durante SAMPLE_INTERVAL_MS
+ * e imprime o resultado. Assume que init_encoder_pcnt() já foi chamada.
+ */
+float printAnemometerReading(void);
+
+// ======================================================== biruta =====================================================================================
+
+static const char *TAG_BIRUTA = "TAG_BIRUTA";
+#define BIRUTA_GPIO_PIN        32 
+#define BIRUTA_ADC_CHANNEL     ADC_CHANNEL_4 // GPIO32 corresponde ao ADC1_CHANNEL_4
+#define BIRUTA_ADC_ATTEN       ADC_ATTEN_DB_11 // Atenuação para ler a faixa completa 0-~3.3V
+
+// --- AJUSTES ---
+// Define os valores ADC esperados para 0 graus (Norte) e ~360 graus
+// Com o divisor 1.8k/3.3k, o máximo teórico é ~4014
+#define ADC_MIN_EXPECTED 0     // Assumindo que 0V = 0 ADC = Norte
+#define ADC_MAX_EXPECTED 4014
+// Handle para a calibração
+static adc_cali_handle_t adc1_cali_handle_biruta = NULL;
+// Flag para indicar se a calibração está ativa
+static bool do_calibration_biruta = false;
+
+// Função map
+long map(long x, long in_min, long in_max, long out_min, long out_max);
+
+// Função angle_to_direction
+const char* angle_to_direction(float angle);
+
+/**
+ * @brief Lê o sensor da biruta uma vez, calcula o ângulo/direção e imprime.
+ * Assume que init_biruta_adc() já foi chamada com sucesso.
+ */
+float printBirutaReading(void);
+
+// ====================================================== LDR =========================================================================================
+
+static const char *TAG_LDR = "TAG_LDR";
+#define LDR_GPIO_PIN            33
+#define LDR_ADC_CHANNEL         ADC_CHANNEL_5  // GPIO33 corresponde ao ADC1_CHANNEL_5
+#define LDR_ADC_ATTEN           ADC_ATTEN_DB_11 // Atenuação para ler a faixa completa 0-~3.3V
+
+/**
+ * @brief Lê o sensor LDR uma vez, calcula a percentagem e imprime no console.
+ *
+ * @param adc_handle Handle da unidade ADC já inicializada.
+ */
+float printLDR(adc_oneshot_unit_handle_t adc_handle);
+
+// ====================================================================================================================================================
+// ========================================================== MAIN ====================================================================================
+// ====================================================================================================================================================
+
+void app_main(void)
+{
+    ESP_ERROR_CHECK(nvs_flash_init());
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    // ============================================= LIGAR SENSORES (Via MOSFET)
+    // Reseta o pino para garantir que não há configurações antigas
+    gpio_reset_pin(SENSOR_POWER_PIN);
+    gpio_set_direction(SENSOR_POWER_PIN, GPIO_MODE_OUTPUT);
+    // Se o pino estava "segurado" (hold) pelo Deep Sleep anterior, solte-o agora
+    rtc_gpio_hold_dis(SENSOR_POWER_PIN);
+    gpio_set_level(SENSOR_POWER_PIN, 1);
+    // Espera 200ms para os sensores estabilizarem a tensão
+    vTaskDelay(pdMS_TO_TICKS(200));
+    // =============================================== Inicialização BME 280:
+    init_bme280();
+    ESP_LOGI(TAG_BME280, "Sensor BME280 inicializado.");
+
+    //================================================ Inicialização sensor de chuva
+    init_rain_sensor_adc();
+    ESP_LOGI(TAG_CHUVA, "Sensor de chuva inicializado.");
+
+    // ============================================== Inicialização do encoder
+    init_encoder_pcnt();
+    ESP_LOGI(TAG_ENCODER, "Encoder inicializado.");
+
+    // ================================================================= Leitura ============================================================
+    // ============================== BME 280
+    double temp = 0.0;
+    double press = 0.0;
+    double hum = 0.0;
+    printBME280(&temp, &press, &hum);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+
+    // ============================== Sensor de chuva
+    float nivelChuva = printChuva(adc1_handle);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+
+    // =============================== Encoder (anemometro)
+    float vel_vento = printAnemometerReading();
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+
+    // =============================== biruta
+    float direcao = printBirutaReading();
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+
+    //================================= LDR
+    float luminosidade = printLDR(adc1_handle);
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+
+    // ============================================
+    // Forçar SDA e SCL para LOW (0V), isso drena qualquer energia residual e impede que o sensor se alimente pelos dados
+    gpio_reset_pin(BME280_SDA_PIN);
+    gpio_set_direction(BME280_SDA_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_level(BME280_SDA_PIN, 0);
+
+    gpio_reset_pin(BME280_SCL_PIN);
+    gpio_set_direction(BME280_SCL_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_level(BME280_SCL_PIN, 0);
+
+    // ================================= Desliga o MOSFET
+    gpio_set_level(SENSOR_POWER_PIN, 0);
+    // ativa o hold para garantir que o pino continue LOW enquanto o ESP dorme
+    rtc_gpio_hold_en(SENSOR_POWER_PIN);
+
+    //=================================== MQTT
+    // Espera 100ms para estabilizar a tensão
+    vTaskDelay(100 / portTICK_PERIOD_MS);
+    wifi_init_sta();
+    vTaskDelay(2000 / portTICK_PERIOD_MS);
+    // Inicia o cliente MQTT
+    ESP_LOGI(TAG, "MQTT Startup..");
+    mqtt_app_start();
+    // Carrega as variáveis no payload e envia
+    char payload_string[256];
+    sprintf(payload_string, "{\"temperatura\": %.1f, \"umidade\": %.1f, \"pressao\": %.1f, \"chuva\": %.1f, \"velocidade\": %.1f,\"direcao\": %.1f, \"luminosidade\": %.1f}", 
+    temp, hum, press, nivelChuva, vel_vento, direcao, luminosidade);
+    publish_message("dados", payload_string);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+
+    //Configuração e Entrada em Sono Profundo (Deep Sleep)
+    ESP_LOGI("SLEEP", "Configurando despertador para %d segundos...", TEMPO_DE_SONO_SEGUNDOS);
+    esp_sleep_enable_timer_wakeup(TEMPO_EM_MICROSSEGUNDOS);
+    ESP_LOGI("SLEEP", "Entrando em Deep Sleep.");
+    esp_deep_sleep_start();
+}
+
+// ================================================ implementações:
+
+// ============================================================ código MQTT =============================================================================
 /*
  * @brief Event handler registrado para receber eventos MQTT
  */
@@ -115,19 +380,6 @@ static void mqtt_app_start(void)
 }
 
 //============================================================= código bme280 ====================================================================
-
-static const char *TAG_BME280 = "TAG_BME280";
-#define BME280_SDA_PIN GPIO_NUM_21
-#define BME280_SCL_PIN GPIO_NUM_22
-#define I2C_MASTER_PORT     I2C_NUM_0
-#define I2C_MASTER_FREQ_HZ  400000 // 400kHz
-#define I2C_TIMEOUT_MS 100
-// Handle para o dispositivo BME280 no barramento I2C
-static i2c_master_dev_handle_t bme280_dev_handle = NULL;
-// Estrutura da biblioteca BME280 para guardar estado e calibração
-static struct bme280_t bme280_dev;
-// Flag para indicar se a inicialização foi bem-sucedida
-static bool bme280_initialized = false;
 
 // =================================================================================
 // Funções de Interface I2C e Delay (Ponte para a biblioteca bme280.c)
@@ -313,19 +565,6 @@ void printBME280(double *temp_ptr, double *press_ptr, double *hum_ptr) {
 } 
 
 // ======================================================== sensor de chuva =====================================================================
-
-// --- Configuração da TAG e do Pino ---
-static const char *TAG_CHUVA = "TAG_CHUVA";
-#define RAIN_SENSOR_GPIO_PIN    34
-#define ADC_UNIT    ADC_UNIT_1     // ADC1 é usado para GPIO34
-#define RAIN_SENSOR_ADC_CHANNEL ADC_CHANNEL_6  // GPIO34 corresponde ao ADC1_CHANNEL_6
-#define RAIN_SENSOR_ADC_ATTEN   ADC_ATTEN_DB_11 // Atenuação para ler a faixa completa 0-~3.3V
-
-// Handle global para a unidade ADC (necessário para a função printChuva)
-adc_oneshot_unit_handle_t adc1_handle = NULL; // Inicializa como NULL
-
-
-
 /**
  * @brief Inicializa o canal para o sensor de chuva.
  * Deve ser chamada uma vez antes de usar printChuva.
@@ -400,33 +639,6 @@ float printChuva(adc_oneshot_unit_handle_t adc_handle) {
 }
 
 // ======================================================== encoder ==============================================================================
-
-static const char *TAG_ENCODER = "TAG_ENCODER";
-
-// --- AJUSTES PARA O ENCODER E ANEMÔMETRO ---
-// Definições do Hardware Encoder E38S6G5-200B-G24N
-#define ENCODER_PPR_FISICO      200     // Pulsos Físicos por Rotação
-#define ENCODER_RESOLUCAO_4X    (ENCODER_PPR_FISICO * 4) // Resolução efetiva com 4x decoding = 800
-
-#define ENCODER_GPIO_A          25
-#define ENCODER_GPIO_B          26
-
-// Definições Físicas do Anemômetro
-#define RAIO_ANEMOMETRO_M       0.16f   // 16 cm
-#define FATOR_ANEMOMETRO        2.5f    // Fator de calibração
-#define PI                      3.14159f
-
-// Intervalo de amostragem para cálculo de velocidade em milissegundos
-#define SAMPLE_INTERVAL_MS      1000
-
-// --- Variáveis Globais ---
-// Handle para a unidade PCNT (precisa ser acessível pela função de leitura)
-static pcnt_unit_handle_t pcnt_unit = NULL;
-// Flag para indicar se a inicialização foi bem-sucedida
-static bool pcnt_initialized = false;
-// Variável para guardar a posição anterior entre chamadas da função de leitura
-static int pos_anterior_global = 0;
-
 
 // =================================================================================
 // Função de Inicialização (Chamada uma vez)
@@ -555,21 +767,6 @@ float printAnemometerReading(void) {
 
 // ======================================================== biruta =====================================================================================
 
-static const char *TAG_BIRUTA = "TAG_BIRUTA";
-#define BIRUTA_GPIO_PIN        32 
-#define BIRUTA_ADC_CHANNEL     ADC_CHANNEL_4 // GPIO32 corresponde ao ADC1_CHANNEL_4
-#define BIRUTA_ADC_ATTEN       ADC_ATTEN_DB_11 // Atenuação para ler a faixa completa 0-~3.3V
-
-// --- AJUSTES ---
-// Define os valores ADC esperados para 0 graus (Norte) e ~360 graus
-// Com o divisor 1.8k/3.3k, o máximo teórico é ~4014
-#define ADC_MIN_EXPECTED 0     // Assumindo que 0V = 0 ADC = Norte
-#define ADC_MAX_EXPECTED 4014
-// Handle para a calibração
-static adc_cali_handle_t adc1_cali_handle_biruta = NULL;
-// Flag para indicar se a calibração está ativa
-static bool do_calibration_biruta = false;
-
 // Função map
 long map(long x, long in_min, long in_max, long out_min, long out_max) {
   if (in_min == in_max) return out_min;
@@ -637,11 +834,6 @@ float printBirutaReading(void) {
 
 // ====================================================== LDR =========================================================================================
 
-static const char *TAG_LDR = "TAG_LDR";
-#define LDR_GPIO_PIN            33
-#define LDR_ADC_CHANNEL         ADC_CHANNEL_5  // GPIO33 corresponde ao ADC1_CHANNEL_5
-#define LDR_ADC_ATTEN           ADC_ATTEN_DB_11 // Atenuação para ler a faixa completa 0-~3.3V
-
 /**
  * @brief Lê o sensor LDR uma vez, calcula a percentagem e imprime no console.
  *
@@ -675,95 +867,4 @@ float printLDR(adc_oneshot_unit_handle_t adc_handle) {
         ESP_LOGE(TAG_LDR, "Erro na leitura do ADC: %s", esp_err_to_name(read_ret));
         return 1;
     }
-}
-
-// ====================================================================================================================================================
-// ========================================================== MAIN ====================================================================================
-// ====================================================================================================================================================
-
-void app_main(void)
-{
-    ESP_ERROR_CHECK(nvs_flash_init());
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    // ============================================= LIGAR SENSORES (Via MOSFET)
-    // Reseta o pino para garantir que não há configurações antigas
-    gpio_reset_pin(SENSOR_POWER_PIN);
-    gpio_set_direction(SENSOR_POWER_PIN, GPIO_MODE_OUTPUT);
-    // Se o pino estava "segurado" (hold) pelo Deep Sleep anterior, solte-o agora
-    rtc_gpio_hold_dis(SENSOR_POWER_PIN);
-    gpio_set_level(SENSOR_POWER_PIN, 1);
-    // Espera 200ms para os sensores estabilizarem a tensão
-    vTaskDelay(pdMS_TO_TICKS(200));
-    // =============================================== Inicialização BME 280:
-    init_bme280();
-    ESP_LOGI(TAG_BME280, "Sensor BME280 inicializado.");
-
-    //================================================ Inicialização sensor de chuva
-    init_rain_sensor_adc();
-    ESP_LOGI(TAG_CHUVA, "Sensor de chuva inicializado.");
-
-    // ============================================== Inicialização do encoder
-    init_encoder_pcnt();
-    ESP_LOGI(TAG_ENCODER, "Encoder inicializado.");
-
-    // ================================================================= Leitura ============================================================
-    // ============================== BME 280
-    double temp = 0.0;
-    double press = 0.0;
-    double hum = 0.0;
-    printBME280(&temp, &press, &hum);
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-
-    // ============================== Sensor de chuva
-    float nivelChuva = printChuva(adc1_handle);
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-
-    // =============================== Encoder (anemometro)
-    float vel_vento = printAnemometerReading();
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-
-    // =============================== biruta
-    float direcao = printBirutaReading();
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-
-    //================================= LDR
-    float luminosidade = printLDR(adc1_handle);
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-
-    // ============================================
-    // Forçar SDA e SCL para LOW (0V), isso drena qualquer energia residual e impede que o sensor se alimente pelos dados
-    gpio_reset_pin(BME280_SDA_PIN);
-    gpio_set_direction(BME280_SDA_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_level(BME280_SDA_PIN, 0);
-
-    gpio_reset_pin(BME280_SCL_PIN);
-    gpio_set_direction(BME280_SCL_PIN, GPIO_MODE_OUTPUT);
-    gpio_set_level(BME280_SCL_PIN, 0);
-
-    // ================================= Desliga o MOSFET
-    gpio_set_level(SENSOR_POWER_PIN, 0);
-    // ativa o hold para garantir que o pino continue LOW enquanto o ESP dorme
-    rtc_gpio_hold_en(SENSOR_POWER_PIN);
-
-    //=================================== MQTT
-    // Espera 100ms para estabilizar a tensão
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-    wifi_init_sta();
-    vTaskDelay(2000 / portTICK_PERIOD_MS);
-    // Inicia o cliente MQTT
-    ESP_LOGI(TAG, "MQTT Startup..");
-    mqtt_app_start();
-    // Carrega as variáveis no payload e envia
-    char payload_string[256];
-    sprintf(payload_string, "{\"temperatura\": %.1f, \"umidade\": %.1f, \"pressao\": %.1f, \"chuva\": %.1f, \"velocidade\": %.1f,\"direcao\": %.1f, \"luminosidade\": %.1f}", 
-    temp, hum, press, nivelChuva, vel_vento, direcao, luminosidade);
-    publish_message("dados", payload_string);
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
-
-    //Configuração e Entrada em Sono Profundo (Deep Sleep)
-    ESP_LOGI("SLEEP", "Configurando despertador para %d segundos...", TEMPO_DE_SONO_SEGUNDOS);
-    esp_sleep_enable_timer_wakeup(TEMPO_EM_MICROSSEGUNDOS);
-    ESP_LOGI("SLEEP", "Entrando em Deep Sleep.");
-    esp_deep_sleep_start();
 }
