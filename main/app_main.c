@@ -281,7 +281,6 @@ void app_main(void)
     vTaskDelay(100 / portTICK_PERIOD_MS);
     wifi_init_sta();
     vTaskDelay(2000 / portTICK_PERIOD_MS);
-    // Inicia o cliente MQTT
     ESP_LOGI(TAG, "MQTT Startup..");
     mqtt_app_start();
     // Carrega as variáveis no payload e envia

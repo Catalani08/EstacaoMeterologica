@@ -15,9 +15,9 @@ Esta solução abrange as áreas de Hardware, Firmware e Cloud Computing.
 | :--- | :--- | :--- |
 | **Microcontrolador** | `ESP32 DevKitC` | Responsável pela leitura dos sensores e conexão Wi-Fi/MQTT. |
 | **IDE** | `VS Code` + `ESP-IDF` | Ambiente de desenvolvimento utilizado para programação em C/C++. |
-| **Protocolo** | `MQTT` | Protocolo leve e eficiente para comunicação M2M (Machine-to-Machine). |
-| **Nuvem/Broker** | `AWS IoT Core` | Serviço gerenciado da Amazon para atuar como Broker MQTT seguro. |
-| **Banco de Dados** | `InfluxDB` | Banco de dados otimizado para séries temporais (dados de sensores). |
+| **Protocolo** | `MQTT (Mosquitto)` | Protocolo leve e eficiente para comunicação M2M (Machine-to-Machine). |
+| **Nuvem/Broker** | `AWS EC2` | Serviço gerenciado da Amazon para atuar como Broker MQTT seguro. |
+| **Frontend** | `InfluxDB` | Banco de dados otimizado para séries temporais (dados de sensores). |
 | **Linguagem** | `C` | Linguagem utilizada para o desenvolvimento do Firmware do ESP32. |
 
 ### 🧩 Sensores Integrados
@@ -35,8 +35,8 @@ Esta solução abrange as áreas de Hardware, Firmware e Cloud Computing.
 ## 💡 Funcionalidades e Objetivos
 
 * ✅ **Monitoramento Completo:** Aquisição simultânea de 7 variáveis ambientais (T, U, P, Luz, Vento (Velocidade e Direção) e Chuva).
-* ✅ **Comunicação Segura:** Publicação de *payloads* (JSON) no Broker MQTT da AWS (IoT Core) usando certificados e TLS.
-* ✅ **Persistência de Dados:** Configuração de regras na AWS IoT Core para encaminhar os dados para um *Bucket* e *Measurement* específico no InfluxDB.
+* ✅ **Comunicação Segura:** Publicação de *payloads* (JSON) no Broker MQTT da AWS usando e TLS.
+* ✅ **Persistência de Dados:** Configuração de regras na AWS para encaminhar os dados para um *Bucket* e *Measurement* específico no InfluxDB.
 * ✅ **Dashboard de Análise:** Criação de visualizações em tempo real  para gráficos e alertas.
 * ✅ **Eficiência Energética:** O código em C no ESP32 foca em desempenho e no uso de modos *Deep Sleep* + controle da alimentação dos sensores a través de MOSFET para uma maior eficiência energética.
 
