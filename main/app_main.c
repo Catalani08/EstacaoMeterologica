@@ -34,6 +34,7 @@ static const char *TAG = "MQTT";
 static esp_mqtt_client_handle_t client = NULL;
 static EventGroupHandle_t mqtt_event_group;
 const int MQTT_CONNECTED_BIT = BIT0;
+#define MQTT_BROKER_URI "meu_endereço_mqtt"
 
 /*
  * @brief Event handler registrado para receber eventos MQTT
@@ -369,7 +370,7 @@ static void mqtt_app_start(void)
 
     // Configuração do cliente MQTT 
     esp_mqtt_client_config_t mqtt_cfg = {
-        .broker.address.uri = "mqtt://98.88.91.49:1883", //"mqtt://98.90.71.170:1883",
+        .broker.address.uri = MQTT_BROKER_URI,
         // .credentials.username = "seu_usuario",    // Removido para conexão anônima
         // .credentials.authentication.password = "sua_senha", // Removido para conexão anônima
     };
